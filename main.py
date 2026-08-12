@@ -8,17 +8,16 @@ ANTHROPIC_KEY = os.environ.get("ANTHROPIC_API_KEY")
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
 
-# Keywords to discard non-market news instantly before scraping
 EXCLUDE_KEYWORDS = [
     "greetings", "wishes", "birth anniversary", "death anniversary", "condoles", 
     "tribute", "homage", "jayanti", "sports", "swachhata", "inaugurates exhibition", 
     "book release", "felicitates", "moharram", "diwali", "eid", "pujas", "appointment",
-    "prizes", "awards", "medal", "tournament", "courtesy call", "cultural" , "thank"
+    "prizes", "awards", "medal", "tournament", "courtesy call", "cultural", "exhibition"
 ]
 
 def get_filtered_pib_releases():
     url = "https://pib.gov.in/AllRelease.aspx"
-    headers = {"User-Agent": "Mozilla/5.0"}
+    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
     releases = []
     
     try:
@@ -43,23 +42,24 @@ def get_filtered_pib_releases():
                 seen.add(r["url"])
                 unique_releases.append(r)
                 
-        return unique_releases
+        # Limit to top 15 filtered releases to avoid hanging/rate limits
+        return unique_releases[:15]
     except Exception as e:
         print("Error fetching release list:", e)
         return []
 
 def extract_article_body(url):
-    headers = {"User-Agent": "Mozilla/5.0"}
+    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
     try:
-        res = requests.get(url, headers=headers, timeout=10)
+        # Strict 5 second timeout to prevent hanging
+        res = requests.get(url, headers=headers, timeout=5)
         soup = BeautifulSoup(res.content, "html.parser")
         paragraphs = soup.find_all("p")
         text_list = [p.get_text(strip=True) for p in paragraphs if len(p.get_text(strip=True)) > 25]
         full_text = "\n".join(text_list)
         if not full_text:
             full_text = soup.get_text(strip=True)
-        # Reduced character cap to 1500 per article to save input tokens
-        return full_text[:1500] 
+        return full_text[:1200]
     except Exception as e:
         print(f"Error scraping {url}: {e}")
         return ""
@@ -100,7 +100,7 @@ No introductory or concluding text.
 
     response = client.messages.create(
         model="claude-3-5-haiku-20241022",
-        max_tokens=500,  # Strict response token limit to cut output costs
+        max_tokens=500,
         messages=[{"role": "user", "content": prompt}]
     )
     return response.content[0].text
