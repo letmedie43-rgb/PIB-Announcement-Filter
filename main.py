@@ -13,7 +13,7 @@ EXCLUDE_KEYWORDS = [
     "greetings", "wishes", "birth anniversary", "death anniversary", "condoles", 
     "tribute", "homage", "jayanti", "sports", "swachhata", "inaugurates exhibition", 
     "book release", "felicitates", "moharram", "diwali", "eid", "pujas", "appointment",
-    "prizes", "awards", "medal", "tournament", "courtesy call", "cultural"
+    "prizes", "awards", "medal", "tournament", "courtesy call", "cultural" , "thank"
 ]
 
 def get_filtered_pib_releases():
