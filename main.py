@@ -1,4 +1,5 @@
 import os
+import sys
 import requests
 from bs4 import BeautifulSoup
 import anthropic
@@ -8,9 +9,26 @@ ANTHROPIC_KEY = os.environ.get("ANTHROPIC_API_KEY")
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
 
+# Fail fast with a clear message instead of a confusing 401 deep in the SDK
+missing = [name for name, val in [
+    ("ANTHROPIC_API_KEY", ANTHROPIC_KEY),
+    ("TELEGRAM_BOT_TOKEN", TELEGRAM_TOKEN),
+    ("TELEGRAM_CHAT_ID", TELEGRAM_CHAT_ID),
+] if not val]
+if missing:
+    print(f"Missing required environment variables: {missing}. "
+          f"Check that these are set as GitHub Secrets and that this workflow "
+          f"has access to them (repo secrets vs. environment-scoped secrets).")
+    sys.exit(1)
+
+# Current active model (Aug 2026). claude-sonnet-5 gives better judgment on
+# impact scoring than Haiku for roughly the same price right now.
+MODEL_NAME = "claude-sonnet-5"
+# Cheaper fallback if you want to cut cost further: "claude-haiku-4-5-20251001"
+
 EXCLUDE_KEYWORDS = [
-    "greetings", "wishes", "birth anniversary", "death anniversary", "condoles", 
-    "tribute", "homage", "jayanti", "sports", "swachhata", "inaugurates exhibition", 
+    "greetings", "wishes", "birth anniversary", "death anniversary", "condoles",
+    "tribute", "homage", "jayanti", "sports", "swachhata", "inaugurates exhibition",
     "book release", "felicitates", "moharram", "diwali", "eid", "pujas", "appointment",
     "prizes", "awards", "medal", "tournament", "courtesy call", "cultural", "exhibition"
 ]
@@ -19,28 +37,28 @@ def get_filtered_pib_releases():
     url = "https://pib.gov.in/AllRelease.aspx"
     headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
     releases = []
-    
+
     try:
         response = requests.get(url, headers=headers, timeout=10)
         soup = BeautifulSoup(response.content, "html.parser")
-        
+
         for a in soup.find_all("a", href=True):
             if "PRID=" in a["href"] or "PressReleaseDetail" in a["href"]:
                 title = a.get_text(strip=True)
                 link = a["href"] if a["href"].startswith("http") else "https://pib.gov.in/" + a["href"]
-                
+
                 if title and len(title) > 20:
                     title_lower = title.lower()
                     if not any(keyword in title_lower for keyword in EXCLUDE_KEYWORDS):
                         releases.append({"title": title, "url": link})
-        
+
         seen = set()
         unique_releases = []
         for r in releases:
             if r["url"] not in seen:
                 seen.add(r["url"])
                 unique_releases.append(r)
-                
+
         return unique_releases[:15]
     except Exception as e:
         print("Error fetching release list:", e)
@@ -63,7 +81,7 @@ def extract_article_body(url):
 
 def analyze_with_claude(releases):
     client = anthropic.Anthropic(api_key=ANTHROPIC_KEY)
-    
+
     combined_content = ""
     for idx, rel in enumerate(releases, 1):
         body = extract_article_body(rel["url"])
@@ -95,12 +113,23 @@ If no article scores 4+, output: "No high-impact announcements found today."
 No introductory or concluding text.
 """
 
-    response = client.messages.create(
-        model="claude-3-5-sonnet-latest",
-        max_tokens=500,
-        messages=[{"role": "user", "content": prompt}]
-    )
-    return response.content[0].text
+    try:
+        response = client.messages.create(
+            model=MODEL_NAME,
+            max_tokens=500,
+            messages=[{"role": "user", "content": prompt}]
+        )
+        return response.content[0].text
+    except anthropic.AuthenticationError as e:
+        print(f"AUTH ERROR - check ANTHROPIC_API_KEY secret (value/scope/whitespace): {e}")
+        raise
+    except anthropic.NotFoundError as e:
+        print(f"MODEL NOT FOUND - '{MODEL_NAME}' may have been retired. "
+              f"Check https://platform.claude.com/docs/en/about-claude/model-deprecations : {e}")
+        raise
+    except anthropic.APIStatusError as e:
+        print(f"API ERROR {e.status_code}: {e.message}")
+        raise
 
 def send_telegram(text):
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
