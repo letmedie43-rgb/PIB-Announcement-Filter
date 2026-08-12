@@ -47,7 +47,7 @@ def summarize_with_claude(headlines):
     📈 Market Sentiment & Analysis:
     - [Bullish / Bearish / Neutral statement with brief reasoning]
     - [Key policy detail or catalyst driving the impact]
-    🔗 Link: [Original URL]
+    
 
     If NO announcement scores 4 or above, simply output: "No high-impact stock market announcements found today."
     Do NOT include any introductory or concluding text.
