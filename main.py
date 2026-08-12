@@ -3,7 +3,7 @@ import requests
 from bs4 import BeautifulSoup
 import anthropic
 
-# Secrets থেকে মান সংগ্রহ
+# Fetch keys from GitHub Secrets
 ANTHROPIC_KEY = os.environ.get("ANTHROPIC_API_KEY")
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
@@ -21,7 +21,7 @@ def get_pib_headlines():
                 link = a["href"] if a["href"].startswith("http") else "https://pib.gov.in/" + a["href"]
                 if title and len(title) > 20:
                     articles.append(f"- {title} (URL: {link})")
-        return list(set(articles))[:25] # Top 25 headlines
+        return list(set(articles))[:25] # Extract top 25 headlines
     except Exception as e:
         print("Error fetching PIB:", e)
         return []
