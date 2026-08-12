@@ -21,7 +21,7 @@ def get_pib_headlines():
                 link = a["href"] if a["href"].startswith("http") else "https://pib.gov.in/" + a["href"]
                 if title and len(title) > 20:
                     articles.append(f"- {title} (URL: {link})")
-        return list(set(articles))[:25] # সেরা ২৫টি হেডলাইন
+        return list(set(articles))[:25] # Top 25 headlines
     except Exception as e:
         print("Error fetching PIB:", e)
         return []
@@ -29,14 +29,14 @@ def get_pib_headlines():
 def summarize_with_claude(headlines):
     client = anthropic.Anthropic(api_key=ANTHROPIC_KEY)
     prompt = f"""
-    নিচে PIB-এর আজকের ২৫টি খবরের তালিকা দেওয়া হলো:
+    Here is a list of today's top 25 PIB announcements:
     {chr(10).join(headlines)}
 
-    তোমার কাজ:
-    ১. এখান থেকে কেবল অর্থনীতি, কৃষি, বিজ্ঞান-প্রযুক্তি, সরকারি নীতি বা পরীক্ষা সংক্রান্ত ৩-৪টি সবচেয়ে গুরুত্বপূর্ণ খবর বেছে নাও।
-    ২. প্রতিটি সংবাদের সারসংক্ষেপ বাংলা ভাষায় ২-৩টি পয়েন্টে লেখো।
-    ৩. শেষে মূল সংবাদের লিংকটি যুক্ত করে দাও।
-    ৪. অতিরিক্ত কোনো ভূমিকা বা উপসংহার লেখার দরকার নেই।
+    Task:
+    1. Select 3-4 most important announcements related to Economy, Agriculture, Science & Technology, Government Policies, or Key Updates.
+    2. Provide a concise summary for each selected announcement in English using 2-3 short bullet points.
+    3. Include the original release URL at the end of each summary.
+    4. Do not include any introductory or concluding text.
     """
     
     response = client.messages.create(
@@ -50,7 +50,7 @@ def send_telegram(text):
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
     payload = {
         "chat_id": TELEGRAM_CHAT_ID,
-        "text": f"🗞️ **আজকের PIB বুলেটিন:**\n\n{text}",
+        "text": f"🗞️ **Today's PIB Digest:**\n\n{text}",
         "parse_mode": "Markdown"
     }
     requests.post(url, json=payload)
