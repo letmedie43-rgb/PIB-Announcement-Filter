@@ -3,7 +3,7 @@ import requests
 from bs4 import BeautifulSoup
 import anthropic
 
-# Fetch secrets from GitHub
+# Fetch secrets from GitHub Secrets
 ANTHROPIC_KEY = os.environ.get("ANTHROPIC_API_KEY")
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
@@ -34,7 +34,6 @@ def get_filtered_pib_releases():
                     if not any(keyword in title_lower for keyword in EXCLUDE_KEYWORDS):
                         releases.append({"title": title, "url": link})
         
-        # Deduplicate
         seen = set()
         unique_releases = []
         for r in releases:
@@ -42,7 +41,6 @@ def get_filtered_pib_releases():
                 seen.add(r["url"])
                 unique_releases.append(r)
                 
-        # Limit to top 15 filtered releases to avoid hanging/rate limits
         return unique_releases[:15]
     except Exception as e:
         print("Error fetching release list:", e)
@@ -51,7 +49,6 @@ def get_filtered_pib_releases():
 def extract_article_body(url):
     headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
     try:
-        # Strict 5 second timeout to prevent hanging
         res = requests.get(url, headers=headers, timeout=5)
         soup = BeautifulSoup(res.content, "html.parser")
         paragraphs = soup.find_all("p")
@@ -74,7 +71,7 @@ def analyze_with_claude(releases):
             combined_content += f"\n[ARTICLE {idx}]\nTitle: {rel['title']}\nBody:\n{body}\n"
 
     if not combined_content:
-        return "No relevant market articles found."
+        return "No relevant market articles found today."
 
     prompt = f"""
 You are an Indian stock market equity analyst. Evaluate the following PIB press releases for direct market/sector impact.
@@ -89,17 +86,17 @@ RULES:
 4. Output MUST be extremely concise. Do NOT include URLs or policy details.
 
 OUTPUT FORMAT (Score 4-10 only):
-📌 Title: [Title]
-📊 Score: [X/10]
-🏭 Sectors & Stocks: [Sectors and potential stock tickers]
-📈 Sentiment & Catalyst: [Bullish/Bearish] - [1 short sentence trigger]
+Title: [Title]
+Score: [X/10]
+Sectors & Stocks: [Sectors and potential stock tickers]
+Sentiment & Catalyst: [Bullish/Bearish] - [1 short sentence trigger]
 
 If no article scores 4+, output: "No high-impact announcements found today."
 No introductory or concluding text.
 """
 
     response = client.messages.create(
-        model="claude-3-haiku-20240307",
+        model="claude-3-5-sonnet-latest",
         max_tokens=500,
         messages=[{"role": "user", "content": prompt}]
     )
@@ -109,10 +106,11 @@ def send_telegram(text):
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
     payload = {
         "chat_id": TELEGRAM_CHAT_ID,
-        "text": f"📈 **Stock Market Radar**\n\n{text}",
-        "parse_mode": "Markdown"
+        "text": f"📈 Stock Market Radar\n\n{text}"
     }
-    requests.post(url, json=payload)
+    res = requests.post(url, json=payload)
+    if res.status_code != 200:
+        print("Telegram API Error:", res.text)
 
 if __name__ == "__main__":
     releases = get_filtered_pib_releases()
