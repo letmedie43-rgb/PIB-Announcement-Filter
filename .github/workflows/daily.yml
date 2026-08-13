@@ -2,7 +2,7 @@ name: Daily PIB Summary
 
 on:
   schedule:
-    - cron: '30 17 * * *' # Runs automatically every day at 11:00 PM IST (17:30 UTC)
+    - cron: '30 16 * * *' # Runs automatically every day at 10:00 PM IST (16:30 UTC)
   workflow_dispatch: # Allows manual trigger
 
 jobs:
