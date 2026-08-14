@@ -47,7 +47,10 @@ def get_filtered_pib_releases():
     headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
     releases = []
 
-    today_ist = datetime.now(IST).strftime("%d %b %Y")  # e.g. "12 Aug 2026"
+    now_ist = datetime.now(IST)
+    today_str = now_ist.strftime("%d %b %Y")
+    yesterday_str = (now_ist - timedelta(days=1)).strftime("%d %b %Y")
+    all_seen_dates = set()  # for self-diagnosis
 
     try:
         response = requests.get(url, headers=headers, timeout=15)
@@ -65,27 +68,45 @@ def get_filtered_pib_releases():
             if any(keyword in title_lower for keyword in EXCLUDE_KEYWORDS):
                 continue
 
-            # "Posted on: DD Mon YYYY" text sits immediately after the <a>
-            # in the same list item -- pull it from the surrounding text.
-            container_text = a.find_parent(["li", "div"]).get_text(" ", strip=True) if a.find_parent(["li", "div"]) else ""
-            m = re.search(r"Posted on:\s*(\d{1,2}\s\w{3}\s\d{4})", container_text)
-            posted_date = m.group(1) if m else None
+            # "Posted on: DD Mon YYYY" appears as the next text node right
+            # after the <a> tag in the page. find_next() walks the parse
+            # tree directly instead of guessing the enclosing tag name.
+            posted_date = None
+            next_text = a.find_next(string=re.compile(r"Posted on:"))
+            if next_text:
+                m = re.search(r"Posted on:\s*(\d{1,2}\s\w{3}\s\d{4})", next_text)
+                if m:
+                    posted_date = m.group(1)
 
-            if posted_date != today_ist:
-                continue
-
-            link = a["href"] if a["href"].startswith("http") else "https://www.pib.gov.in" + a["href"]
-            releases.append({"title": title, "url": link})
+            all_seen_dates.add(posted_date)
+            releases.append({"title": title, "url": None, "posted_date": posted_date, "href": a["href"]})
 
         seen = set()
         unique_releases = []
         for r in releases:
-            if r["url"] not in seen:
-                seen.add(r["url"])
+            if r["href"] not in seen:
+                seen.add(r["href"])
                 unique_releases.append(r)
 
-        print(f"Found {len(unique_releases)} releases posted today ({today_ist}) after filtering.")
-        return unique_releases
+        # Prefer strictly today's releases. Only fall back to yesterday's
+        # date if today has zero matches -- this covers runs that land
+        # right around midnight IST (queue delays, late manual test runs)
+        # without double-reporting yesterday's news on a normal run.
+        todays = [r for r in unique_releases if r["posted_date"] == today_str]
+        chosen = todays
+        used_date = today_str
+        if not chosen:
+            chosen = [r for r in unique_releases if r["posted_date"] == yesterday_str]
+            used_date = yesterday_str
+
+        for r in chosen:
+            r["url"] = r["href"] if r["href"].startswith("http") else "https://www.pib.gov.in" + r["href"]
+
+        print(f"Found {len(chosen)} releases posted on {used_date} after filtering "
+              f"(today={today_str} had {len(todays)} matches).")
+        if len(chosen) == 0:
+            print(f"DEBUG - no matches. Sample of dates actually parsed from the page: {list(all_seen_dates)[:8]}")
+        return chosen
     except Exception as e:
         print("Error fetching release list:", e)
         return []
@@ -171,6 +192,8 @@ def send_telegram(text):
     res = requests.post(url, json=payload)
     if res.status_code != 200:
         print("Telegram API Error:", res.text)
+    else:
+        print("Telegram message sent successfully.")
 
 if __name__ == "__main__":
     releases = get_filtered_pib_releases()
