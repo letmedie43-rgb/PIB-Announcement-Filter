@@ -54,12 +54,22 @@ def get_filtered_pib_releases():
 
     try:
         response = requests.get(url, headers=headers, timeout=15)
+        print(f"HTTP status: {response.status_code}, page length: {len(response.text)} chars")
         soup = BeautifulSoup(response.content, "html.parser")
 
-        for a in soup.find_all("a", href=True):
-            if "PRID=" not in a["href"]:
-                continue
+        matching_anchors = [a for a in soup.find_all("a", href=True) if "PRID=" in a["href"]]
+        print(f"Found {len(matching_anchors)} anchor tags containing PRID=")
 
+        # One-time raw diagnostic: show exactly what text follows the first
+        # matching anchor, so we can see PIB's real formatting instead of
+        # guessing at it again.
+        if matching_anchors:
+            sample = matching_anchors[0]
+            next_bits = list(sample.find_all_next(string=True, limit=6))
+            print(f"DEBUG - first anchor title: {sample.get_text(strip=True)!r}")
+            print(f"DEBUG - next 6 text nodes after it: {[repr(t) for t in next_bits]}")
+
+        for a in matching_anchors:
             title = a.get_text(strip=True)
             if not title or len(title) <= 20:
                 continue
@@ -189,11 +199,14 @@ def send_telegram(text):
         "chat_id": TELEGRAM_CHAT_ID,
         "text": f"📈 Stock Market Radar\n\n{text}"
     }
-    res = requests.post(url, json=payload)
-    if res.status_code != 200:
-        print("Telegram API Error:", res.text)
-    else:
-        print("Telegram message sent successfully.")
+    try:
+        res = requests.post(url, json=payload, timeout=15)
+        if res.status_code != 200:
+            print("Telegram API Error:", res.text)
+        else:
+            print("Telegram message sent successfully.")
+    except requests.exceptions.RequestException as e:
+        print("Telegram request failed/timed out:", e)
 
 if __name__ == "__main__":
     releases = get_filtered_pib_releases()
