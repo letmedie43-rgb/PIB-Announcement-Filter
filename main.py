@@ -5,6 +5,7 @@ from datetime import datetime, timedelta, timezone
 import requests
 from bs4 import BeautifulSoup
 import anthropic
+from playwright.sync_api import sync_playwright
 
 IST = timezone(timedelta(hours=5, minutes=30))
 
@@ -37,6 +38,24 @@ EXCLUDE_KEYWORDS = [
     "prizes", "awards", "medal", "tournament", "courtesy call", "cultural", "exhibition"
 ]
 
+def fetch_rendered_html(url, wait_ms=4000):
+    # PIB's release list is populated by JavaScript after the initial page
+    # load -- a plain requests.get() only ever sees an empty shell. This
+    # uses a real (headless) browser to render the page fully before we
+    # parse it, the same way an actual visitor's browser would.
+    with sync_playwright() as p:
+        browser = p.chromium.launch()
+        page = browser.new_page(
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                       "(KHTML, like Gecko) Chrome/120.0 Safari/537.36"
+        )
+        page.goto(url, timeout=30000)
+        page.wait_for_timeout(wait_ms)  # let AJAX-loaded content populate
+        html = page.content()
+        browser.close()
+        return html
+
+
 def get_filtered_pib_releases():
     # reg=48 = all ministries, all regions; lang=1 = English.
     # This page groups releases BY MINISTRY, not chronologically, so we
@@ -53,21 +72,25 @@ def get_filtered_pib_releases():
     all_seen_dates = set()  # for self-diagnosis
 
     try:
-        response = requests.get(url, headers=headers, timeout=15)
-        print(f"HTTP status: {response.status_code}, page length: {len(response.text)} chars")
-        soup = BeautifulSoup(response.content, "html.parser")
+        html = fetch_rendered_html(url)
+        print(f"Rendered page length: {len(html)} chars")
+        soup = BeautifulSoup(html, "html.parser")
 
         matching_anchors = [a for a in soup.find_all("a", href=True) if "PRID=" in a["href"]]
         print(f"Found {len(matching_anchors)} anchor tags containing PRID=")
 
-        # One-time raw diagnostic: show exactly what text follows the first
-        # matching anchor, so we can see PIB's real formatting instead of
-        # guessing at it again.
+        # One-time raw diagnostic: dump the actual HTML markup surrounding
+        # a few real entries, so we can see PIB's exact structure directly
+        # instead of inferring it from parsed text nodes (which has failed
+        # to reveal where the date actually lives).
         if matching_anchors:
-            sample = matching_anchors[0]
-            next_bits = list(sample.find_all_next(string=True, limit=6))
-            print(f"DEBUG - first anchor title: {sample.get_text(strip=True)!r}")
-            print(f"DEBUG - next 6 text nodes after it: {[repr(t) for t in next_bits]}")
+            for i, sample in enumerate(matching_anchors[:3]):
+                container = sample.parent
+                # walk up one more level if the immediate parent is just the <a> itself
+                if container and container.name == "a":
+                    container = container.parent
+                raw_html = str(container)[:600] if container else "(no parent found)"
+                print(f"DEBUG RAW HTML #{i} around {sample.get_text(strip=True)[:50]!r}:\n{raw_html}\n---")
 
         for a in matching_anchors:
             title = a.get_text(strip=True)
