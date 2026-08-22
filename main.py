@@ -5,7 +5,6 @@ from datetime import datetime, timedelta, timezone
 import requests
 from bs4 import BeautifulSoup
 import anthropic
-from playwright.sync_api import sync_playwright
 
 IST = timezone(timedelta(hours=5, minutes=30))
 
@@ -38,24 +37,6 @@ EXCLUDE_KEYWORDS = [
     "prizes", "awards", "medal", "tournament", "courtesy call", "cultural", "exhibition"
 ]
 
-def fetch_rendered_html(url, wait_ms=4000):
-    # PIB's release list is populated by JavaScript after the initial page
-    # load -- a plain requests.get() only ever sees an empty shell. This
-    # uses a real (headless) browser to render the page fully before we
-    # parse it, the same way an actual visitor's browser would.
-    with sync_playwright() as p:
-        browser = p.chromium.launch()
-        page = browser.new_page(
-            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-                       "(KHTML, like Gecko) Chrome/120.0 Safari/537.36"
-        )
-        page.goto(url, timeout=30000)
-        page.wait_for_timeout(wait_ms)  # let AJAX-loaded content populate
-        html = page.content()
-        browser.close()
-        return html
-
-
 def get_filtered_pib_releases():
     # reg=48 = all ministries, all regions; lang=1 = English.
     # This page groups releases BY MINISTRY, not chronologically, so we
@@ -72,9 +53,9 @@ def get_filtered_pib_releases():
     all_seen_dates = set()  # for self-diagnosis
 
     try:
-        html = fetch_rendered_html(url)
-        print(f"Rendered page length: {len(html)} chars")
-        soup = BeautifulSoup(html, "html.parser")
+        response = requests.get(url, headers=headers, timeout=15)
+        print(f"HTTP status: {response.status_code}, page length: {len(response.text)} chars")
+        soup = BeautifulSoup(response.content, "html.parser")
 
         matching_anchors = [a for a in soup.find_all("a", href=True) if "PRID=" in a["href"]]
         print(f"Found {len(matching_anchors)} anchor tags containing PRID=")
